@@ -568,6 +568,7 @@ export const listIncidents = async ({
       { assigned_hod_name: { contains: search.trim(), mode: 'insensitive' } },
       { location: { contains: search.trim(), mode: 'insensitive' } },
       { hod_submitted_by_name: { contains: search.trim(), mode: 'insensitive' } },
+      { final_approver_name: { contains: search.trim(), mode: 'insensitive' } },
     ];
 
     if (!where.AND) where.AND = [];
