@@ -1,6 +1,7 @@
 import prisma from '../config/db.js';
 import authPool from '../config/authDb.js';
 import { getEmployeeByEmpId } from './employee.service.js';
+import { getDepartmentMap, resolveDepartmentName } from './department.service.js';
 import { isUserSuperAdmin } from '../middleware/checkPermission.js';
 import { getAllowedIncidentCategories, INCIDENT_CATEGORY_FIELDS } from './incidentCategoryAccess.service.js';
 
@@ -79,6 +80,9 @@ export const createIncident = async (data, user) => {
       assignedHodDept = hodEmp.department;
     }
   }
+
+  reporterDept = await resolveDepartmentName(reporterDept);
+  assignedHodDept = await resolveDepartmentName(assignedHodDept);
 
   const hodIds = assignedHods.map((h) => String(h.empId)).filter(Boolean);
   if (hodEmpId && !hodIds.includes(String(hodEmpId))) {
@@ -254,7 +258,9 @@ export const updateReporterIncident = async (id, data, user) => {
       assign_incident_report: hodEmpId,
       assigned_hod_name: primaryHod?.name || data.assigned_hod_name || primaryEmployee?.name || incident.assigned_hod_name || '',
       assigned_hod_email: primaryHod?.email || data.assigned_hod_email || primaryEmployee?.email || incident.assigned_hod_email || '',
-      assigned_hod_dept: primaryHod?.department || data.assigned_hod_dept || primaryEmployee?.department || incident.assigned_hod_dept || '',
+      assigned_hod_dept: await resolveDepartmentName(
+        primaryHod?.department || data.assigned_hod_dept || primaryEmployee?.department || incident.assigned_hod_dept || ''
+      ),
       assigned_hod_ids: assignedHodIds,
       assigned_hod_names: assignedHodNames,
       name_of_treating_counsultant: data.name_of_treating_counsultant || '',
@@ -588,9 +594,23 @@ export const listIncidents = async ({
     findManyArgs.take = safeLimit;
   }
 
+  const deptMap = await getDepartmentMap();
+  const resolveDept = (val) => {
+    if (!val) return '';
+    const s = String(val).trim();
+    return deptMap.get(s.toLowerCase()) || deptMap.get(s) || s;
+  };
+
+  const resolveItems = (list) =>
+    list.map((inc) => ({
+      ...inc,
+      reporter_dept: resolveDept(inc.reporter_dept),
+      assigned_hod_dept: resolveDept(inc.assigned_hod_dept),
+    }));
+
   if (exportAll) {
     const items = await prisma.incidentReport.findMany(findManyArgs);
-    return { total: items.length, items };
+    return { total: items.length, items: resolveItems(items) };
   }
 
   const [total, items] = await Promise.all([
@@ -603,7 +623,7 @@ export const listIncidents = async ({
     page: safePage,
     limit: safeLimit,
     totalPages: Math.ceil(total / safeLimit) || 1,
-    items,
+    items: resolveItems(items),
   };
 };
 
@@ -623,6 +643,9 @@ export const getIncidentById = async (id, user = null) => {
   if (!incident) {
     return null;
   }
+
+  incident.reporter_dept = await resolveDepartmentName(incident.reporter_dept);
+  incident.assigned_hod_dept = await resolveDepartmentName(incident.assigned_hod_dept);
 
   if (user) {
     const canApprove = await canUserFinalApprove(user);

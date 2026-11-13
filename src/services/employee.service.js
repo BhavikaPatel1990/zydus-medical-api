@@ -1,5 +1,6 @@
 import axios from 'axios';
 import authPool from '../config/authDb.js';
+import { getDepartmentMap, resolveDepartmentName } from './department.service.js';
 
 const getUserListUrl = () => {
   const configuredBaseUrl = process.env.AUTH_SERVICE_URL?.trim();
@@ -116,6 +117,13 @@ export const searchEmployees = async (search = '', siteId = null, limit = 25, ro
       }
     }
 
+    const deptMap = await getDepartmentMap();
+    const resolveDept = (val) => {
+      if (!val) return 'General';
+      const s = String(val).trim();
+      return deptMap.get(s.toLowerCase()) || deptMap.get(s) || s;
+    };
+
     return (employees || [])
       .filter((employee) => matchesSite(employee, siteId))
       .filter((employee) => {
@@ -144,7 +152,7 @@ export const searchEmployees = async (search = '', siteId = null, limit = 25, ro
         name: getEmployeeName(employee),
         username: employee.username,
         email: employee.email,
-        department: employee.emp_dept || employee.department || 'General',
+        department: resolveDept(employee.emp_dept || employee.department),
         hodEmail: employee.hod_email ?? employee.hodEmail,
         inchargeEmail: employee.incharge_email ?? employee.inchargeEmail,
         mobile: employee.mobile_number ?? employee.mobile,
@@ -174,13 +182,14 @@ export const getEmployeeByEmpId = async (empId, siteId = null) => {
     const res = await authPool.query(query, params);
     if (res.rows.length === 0) return null;
     const row = res.rows[0];
+    const resolvedDept = await resolveDepartmentName(row.emp_dept);
     return {
       id: row.id,
       empId: row.emp_id,
       name: row.full_name || row.username,
       username: row.username,
       email: row.email,
-      department: row.emp_dept,
+      department: resolvedDept,
       hodEmail: row.hod_email,
       siteId: row.emp_site_id,
     };

@@ -8,6 +8,7 @@ import response from '../utils/response.js';
 import { isUserSuperAdmin } from '../middleware/checkPermission.js';
 import { INCIDENT_UPLOADS_DIR } from '../middleware/upload.js';
 import { getApiBasePath } from '../config/apiBasePath.js';
+import { getDepartmentMap } from '../services/department.service.js';
 
 export const create = async (req, res) => {
   try {
@@ -151,6 +152,13 @@ export const exportIncidents = async (req, res) => {
       return response.notFound(res, 'No incidents match the selected filters');
     }
 
+    const deptMap = await getDepartmentMap();
+    const resolveDept = (val) => {
+      if (!val) return '';
+      const s = String(val).trim();
+      return deptMap.get(s.toLowerCase()) || deptMap.get(s) || s;
+    };
+
     const transformed = items.map((item) => ({
       'Created Date': formatDateTime(item.created_at || item.date_of_reporting),
       'Incident No': item.incident_no || '',
@@ -168,7 +176,7 @@ export const exportIncidents = async (req, res) => {
       'Assigned Lead Emp ID': item.assign_incident_report || '',
       'Assigned Lead Name': item.assigned_hod_name || '',
       'Assigned Lead Email': item.assigned_hod_email || '',
-      'Assigned Lead Department': item.assigned_hod_dept || '',
+      'Assigned Lead Department': resolveDept(item.assigned_hod_dept),
       'Assigned Leads (All)': formatArrayOrText(item.assigned_hod_names),
       'Treating Consultant': item.name_of_treating_counsultant || '',
       'Severity of Injury': formatArrayOrText(item.severity_of_injury),
@@ -197,7 +205,7 @@ export const exportIncidents = async (req, res) => {
       'Reporter Emp ID': item.reporter_emp_id || '',
       'Reporter Name': item.reporter_name || '',
       'Reporter Email': item.reporter_email || '',
-      'Reporter Department': item.reporter_dept || '',
+      'Reporter Department': resolveDept(item.reporter_dept),
       'Investigation Submitted Date': formatDateTime(item.hod_submitted_at),
       'Submitted By Lead Emp ID': item.hod_submitted_by_emp_id || '',
       'Submitted By Lead Name': item.hod_submitted_by_name || '',
