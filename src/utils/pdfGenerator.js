@@ -1,6 +1,11 @@
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import PDFDocument from 'pdfkit';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const INCIDENT_UPLOADS_DIR = path.resolve(__dirname, '../../uploads/incidents');
 
 const formatDate = (value) => {
   if (!value) return 'N/A';
@@ -17,8 +22,12 @@ const formatDateTime = (value) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
   return new Intl.DateTimeFormat('en-GB', {
-    day: '2-digit', month: '2-digit', year: 'numeric',
-    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
   }).format(date);
 };
 
@@ -29,6 +38,7 @@ export const generateIncidentPdf = (incident, stream, siteName = 'ZYDUS HOSPITAL
   const doc = new PDFDocument({
     size: 'A4',
     margins: { top: 28, bottom: 28, left: 32, right: 32 },
+    bufferPages: true,
   });
 
   doc.pipe(stream);
@@ -82,13 +92,20 @@ export const generateIncidentPdf = (incident, stream, siteName = 'ZYDUS HOSPITAL
   doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#fef08a')
      .text(`STATUS: ${statusText}`, startX + contentWidth - 145, y + 28, { align: 'right', width: 135 });
 
-  y += bannerHeight + 10;
+  y += bannerHeight + 12;
 
-  const drawSection = (title) => {
-    if (y > 720) {
+  // Helper to ensure enough space on current page
+  const ensurePageSpace = (neededHeight) => {
+    if (y + neededHeight > 760) {
       doc.addPage();
       y = 32;
+      return true;
     }
+    return false;
+  };
+
+  const drawSection = (title) => {
+    ensurePageSpace(45);
     doc.rect(startX, y, contentWidth, 18).fill('#f0fdfa');
     doc.rect(startX, y, 4, 18).fill('#0f766e');
     doc.fillColor('#0f766e').fontSize(8.5).font('Helvetica-Bold')
@@ -97,29 +114,39 @@ export const generateIncidentPdf = (incident, stream, siteName = 'ZYDUS HOSPITAL
   };
 
   const drawRow = (l1, v1, l2, v2) => {
-    if (y > 740) {
-      doc.addPage();
-      y = 32;
-    }
+    const val1 = (v1 === null || v1 === undefined || v1 === '') ? 'N/A' : String(v1);
+    const val2 = (v2 === null || v2 === undefined || v2 === '') ? 'N/A' : String(v2);
+
+    doc.fontSize(8).font('Helvetica');
+    const col1Width = l2 ? 135 : (contentWidth - 130);
+    const h1 = doc.heightOfString(val1, { width: col1Width });
+    const h2 = l2 ? doc.heightOfString(val2, { width: 130 }) : 0;
+    const rowHeight = Math.max(h1, h2, 12) + 5;
+
+    ensurePageSpace(rowHeight);
+
     doc.fontSize(8).font('Helvetica-Bold').fillColor('#475569').text(l1, startX, y, { width: 125 });
-    doc.font('Helvetica').fillColor('#0f172a').text(v1 || 'N/A', startX + 130, y, { width: 135 });
+    doc.font('Helvetica').fillColor('#0f172a').text(val1, startX + 130, y, { width: col1Width });
 
     if (l2) {
       doc.font('Helvetica-Bold').fillColor('#475569').text(l2, startX + 270, y, { width: 125 });
-      doc.font('Helvetica').fillColor('#0f172a').text(v2 || 'N/A', startX + 400, y, { width: 130 });
+      doc.font('Helvetica').fillColor('#0f172a').text(val2, startX + 400, y, { width: 130 });
     }
-    y += 15;
+    y += rowHeight;
   };
 
   const drawBlock = (label, text) => {
-    if (y > 700) {
-      doc.addPage();
-      y = 32;
-    }
+    const content = text && String(text).trim() ? String(text).trim() : 'None specified.';
+    doc.fontSize(8).font('Helvetica');
+    const textHeight = doc.heightOfString(content, { width: contentWidth, align: 'justify' });
+    const blockHeight = 14 + textHeight + 6;
+
+    ensurePageSpace(Math.min(blockHeight, 70));
+
     doc.fontSize(8).font('Helvetica-Bold').fillColor('#334155').text(label, startX, y);
-    y += 11;
-    doc.font('Helvetica').fillColor('#1e293b').text(text || 'None specified.', startX, y, { width: contentWidth, align: 'justify' });
-    y += Math.max(doc.heightOfString(text || 'None specified.', { width: contentWidth }) + 6, 16);
+    y += 12;
+    doc.font('Helvetica').fillColor('#1e293b').text(content, startX, y, { width: contentWidth, align: 'justify' });
+    y += textHeight + 8;
   };
 
   // 1. Basic Details
@@ -160,7 +187,7 @@ export const generateIncidentPdf = (incident, stream, siteName = 'ZYDUS HOSPITAL
     { label: 'Spillage / Break Down:', val: incident.spillage_exposure_break_down },
     { label: 'Employee Related:', val: incident.employee_related },
     { label: 'Infusion Related:', val: incident.infusion_related },
-  ].filter(c => c.val && c.val.length > 0);
+  ].filter((c) => c.val && c.val.length > 0);
 
   if (cats.length === 0) {
     drawRow('Selected Categories:', 'None selected');
@@ -184,15 +211,15 @@ export const generateIncidentPdf = (incident, stream, siteName = 'ZYDUS HOSPITAL
 
   // 5. Digital Audit & Timeline (Created, Submitted, Approved)
   drawSection('5. Timeline, Review & Final Approval');
-  
+
   // Create / Report Milestone
-  const createdDateStr = incident.date_of_reporting 
+  const createdDateStr = incident.date_of_reporting
     ? `${formatDate(incident.date_of_reporting)} ${incident.time_of_reporting || ''}`
     : (incident.created_at ? formatDateTime(incident.created_at) : 'N/A');
   drawRow('Incident Created Date:', createdDateStr, 'Reported By:', `${incident.reporter_name} (${incident.reporter_emp_id})`);
 
   // Investigation Submitted Milestone
-  const hodSubmitter = incident.hod_submitted_by_name 
+  const hodSubmitter = incident.hod_submitted_by_name
     ? `${incident.hod_submitted_by_name} (${incident.hod_submitted_by_emp_id || ''})`
     : (incident.hod_submitted_at ? 'Lead' : 'Pending');
   const hodSubmittedDateStr = incident.hod_submitted_at ? formatDateTime(incident.hod_submitted_at) : 'Pending Submission';
@@ -202,10 +229,10 @@ export const generateIncidentPdf = (incident, stream, siteName = 'ZYDUS HOSPITAL
   }
 
   // Final Approval Milestone
-  const approverName = incident.final_approver_name 
-    ? `${incident.final_approver_name} (${incident.final_approver_emp_id || ''})` 
+  const approverName = incident.final_approver_name
+    ? `${incident.final_approver_name} (${incident.final_approver_emp_id || ''})`
     : 'Pending Approval';
-  const approvalDateStr = incident.final_approval_date 
+  const approvalDateStr = incident.final_approval_date
     ? formatDateTime(incident.final_approval_date)
     : (incident.status === 'FINAL_APPROVED' && incident.updated_at ? formatDateTime(incident.updated_at) : 'Pending Approval');
   drawRow('Approved Date:', approvalDateStr, 'Approved By:', approverName);
@@ -213,19 +240,131 @@ export const generateIncidentPdf = (incident, stream, siteName = 'ZYDUS HOSPITAL
     drawRow('Quality Approver Remarks:', incident.final_remarks);
   }
 
-  // Attached Photographic Evidence / Images
-  if (Array.isArray(incident.images) && incident.images.length > 0) {
-    drawRow('Attached Incident Evidence:', `${incident.images.length} File(s) Attached on Incident Record`);
+  // 6. Attached Evidence / Images & Documents
+  const rawImages = Array.isArray(incident.images) ? incident.images : [];
+  if (rawImages.length > 0) {
+    drawSection('6. Attached Incident Evidence & Files');
+
+    const imageFiles = [];
+    const documentFiles = [];
+
+    for (const item of rawImages) {
+      if (!item) continue;
+      const fileName = String(item).split('/').filter(Boolean).pop();
+      const ext = path.extname(fileName).toLowerCase();
+      const localPath = path.join(INCIDENT_UPLOADS_DIR, fileName);
+
+      if (['.png', '.jpg', '.jpeg'].includes(ext)) {
+        imageFiles.push({ fileName, localPath, ext });
+      } else {
+        documentFiles.push({ fileName, localPath, ext });
+      }
+    }
+
+    // Render document attachments (e.g. PDF files)
+    if (documentFiles.length > 0) {
+      ensurePageSpace(26 + documentFiles.length * 16);
+      doc.fontSize(8).font('Helvetica-Bold').fillColor('#334155')
+         .text('Attached PDF Documents / Evidence Files:', startX, y);
+      y += 14;
+
+      for (const docFile of documentFiles) {
+        doc.fontSize(8).font('Helvetica-Bold').fillColor('#b91c1c').text('• [PDF DOCUMENT]', startX + 8, y, { continued: true });
+        doc.font('Helvetica').fillColor('#0f172a').text(`  ${docFile.fileName}  — Available for direct download from Incident Portal`);
+        y += 14;
+      }
+      y += 8;
+    }
+
+    // Render image attachments (PNG, JPG, JPEG embedded directly)
+    if (imageFiles.length > 0) {
+      ensurePageSpace(30);
+      doc.fontSize(8).font('Helvetica-Bold').fillColor('#334155')
+         .text(`Attached Photographic Evidence (${imageFiles.length} Image(s)):`, startX, y);
+      y += 14;
+
+      const imgWidth = (contentWidth - 16) / 2; // ~257
+      const imgHeight = 160;
+
+      for (let i = 0; i < imageFiles.length; i += 2) {
+        ensurePageSpace(imgHeight + 20);
+
+        const img1 = imageFiles[i];
+        const img2 = imageFiles[i + 1];
+
+        // Draw card 1
+        const x1 = startX;
+        doc.roundedRect(x1, y, imgWidth, imgHeight, 4).lineWidth(0.5).stroke('#cbd5e1');
+        let rendered1 = false;
+        if (fs.existsSync(img1.localPath)) {
+          try {
+            doc.image(img1.localPath, x1 + 4, y + 4, {
+              fit: [imgWidth - 8, imgHeight - 22],
+              align: 'center',
+              valign: 'center',
+            });
+            rendered1 = true;
+          } catch (e) {
+            console.error('Failed to embed image in PDF:', img1.fileName, e.message);
+          }
+        }
+        if (!rendered1) {
+          doc.fontSize(8).font('Helvetica-Oblique').fillColor('#94a3b8')
+             .text('Preview unavailable', x1 + 10, y + 70, { width: imgWidth - 20, align: 'center' });
+        }
+        doc.fontSize(7).font('Helvetica').fillColor('#475569')
+           .text(img1.fileName, x1 + 4, y + imgHeight - 14, { width: imgWidth - 8, align: 'center', ellipsis: true });
+
+        // Draw card 2 if exists
+        if (img2) {
+          const x2 = startX + imgWidth + 16;
+          doc.roundedRect(x2, y, imgWidth, imgHeight, 4).lineWidth(0.5).stroke('#cbd5e1');
+          let rendered2 = false;
+          if (fs.existsSync(img2.localPath)) {
+            try {
+              doc.image(img2.localPath, x2 + 4, y + 4, {
+                fit: [imgWidth - 8, imgHeight - 22],
+                align: 'center',
+                valign: 'center',
+              });
+              rendered2 = true;
+            } catch (e) {
+              console.error('Failed to embed image in PDF:', img2.fileName, e.message);
+            }
+          }
+          if (!rendered2) {
+            doc.fontSize(8).font('Helvetica-Oblique').fillColor('#94a3b8')
+               .text('Preview unavailable', x2 + 10, y + 70, { width: imgWidth - 20, align: 'center' });
+          }
+          doc.fontSize(7).font('Helvetica').fillColor('#475569')
+             .text(img2.fileName, x2 + 4, y + imgHeight - 14, { width: imgWidth - 8, align: 'center', ellipsis: true });
+        }
+
+        y += imgHeight + 12;
+      }
+    }
   }
 
-  // Footer
-  doc.fontSize(7.5).font('Helvetica').fillColor('#94a3b8')
-     .text(
-       `Generated automatically by Zydus Medical Incident Portal on ${formatDateTime(new Date())} | Official Quality Document`,
-       startX,
-       792,
-       { align: 'center', width: contentWidth }
-     );
+  // Footer & Page Numbers (Multi-page pass)
+  const range = doc.bufferedPageRange();
+  for (let i = range.start; i < range.start + range.count; i++) {
+    doc.switchToPage(i);
+    doc.rect(startX, 808, contentWidth, 0.5).fill('#e2e8f0');
+    doc.fontSize(7).font('Helvetica').fillColor('#64748b')
+       .text(
+         `Generated automatically by Zydus Medical Incident Portal on ${formatDateTime(new Date())} | Confidential Quality Record`,
+         startX,
+         812,
+         { width: contentWidth - 85 }
+       );
+    doc.fontSize(7).font('Helvetica-Bold').fillColor('#0f766e')
+       .text(
+         `Page ${i + 1} of ${range.count}`,
+         startX + contentWidth - 80,
+         812,
+         { width: 80, align: 'right' }
+       );
+  }
 
   doc.end();
 };

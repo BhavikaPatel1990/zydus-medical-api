@@ -76,6 +76,53 @@ export const list = async (req, res) => {
   }
 };
 
+const formatDateOnly = (val) => {
+  if (!val) return '';
+  const d = new Date(val);
+  if (isNaN(d.getTime())) return String(val);
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${day}/${month}/${year}`;
+};
+
+const formatDateTime = (val) => {
+  if (!val) return '';
+  const d = new Date(val);
+  if (isNaN(d.getTime())) return String(val);
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  const hours = String(d.getHours()).padStart(2, '0');
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  return `${day}/${month}/${year} ${hours}:${minutes}`;
+};
+
+const combineDateTime = (dateVal, timeVal) => {
+  const dStr = formatDateOnly(dateVal);
+  const tStr = typeof timeVal === 'string' ? timeVal.trim() : '';
+  if (dStr && tStr) return `${dStr} ${tStr}`;
+  if (dStr) return `${dStr} 00:00`;
+  return tStr;
+};
+
+const formatArrayOrText = (val) => {
+  if (val === null || val === undefined) return '';
+  if (Array.isArray(val)) {
+    return val.filter(Boolean).map((v) => String(v).trim()).join(', ');
+  }
+  return String(val).trim();
+};
+
+const escapeCsvCell = (value) => {
+  if (value === null || value === undefined) return '""';
+  let text = String(value).trim();
+  if (/^[\s]*[=+@-]/.test(text)) {
+    text = `'${text}`;
+  }
+  return `"${text.replace(/"/g, '""')}"`;
+};
+
 export const exportIncidents = async (req, res) => {
   try {
     const {
@@ -104,25 +151,69 @@ export const exportIncidents = async (req, res) => {
       return response.notFound(res, 'No incidents match the selected filters');
     }
 
-    const columns = Object.keys(items[0]);
-    const escapeCsv = (value) => {
-      if (value === null || value === undefined) return '';
-      let text;
-      if (value instanceof Date) {
-        text = value.toISOString();
-      } else if (Array.isArray(value) || (typeof value === 'object' && value !== null)) {
-        text = JSON.stringify(value);
-      } else {
-        text = String(value);
-        if (typeof value === 'string' && /^[\s]*[=+@-]/.test(text)) text = `'${text}`;
-      }
-      return `"${text.replace(/"/g, '""')}"`;
-    };
+    const transformed = items.map((item) => ({
+      'Created Date': formatDateTime(item.created_at || item.date_of_reporting),
+      'Incident No': item.incident_no || '',
+      'Status': String(item.status || '').replace(/_/g, ' '),
+      'Type of Incident': formatArrayOrText(item.type_of_incident),
+      'Sub Type of Incident': formatArrayOrText(item.sub_type_of_incident),
+      'Patient / Person Name': item.name || '',
+      'MR No / CR No': item.cr_no || '',
+      'Date & Time of Incident': combineDateTime(item.date_of_incident, item.time_of_incident),
+      'Date & Time of Reporting': combineDateTime(item.date_of_reporting, item.time_of_reporting),
+      'Emp ID': item.emp_id || '',
+      'Procedure / Surgery Done': item.procedure_surgery_done || '',
+      'Location / Ward': item.location || '',
+      'Responsible Person': item.responsible_person || '',
+      'Assigned Lead Emp ID': item.assign_incident_report || '',
+      'Assigned Lead Name': item.assigned_hod_name || '',
+      'Assigned Lead Email': item.assigned_hod_email || '',
+      'Assigned Lead Department': item.assigned_hod_dept || '',
+      'Assigned Leads (All)': formatArrayOrText(item.assigned_hod_names),
+      'Treating Consultant': item.name_of_treating_counsultant || '',
+      'Severity of Injury': formatArrayOrText(item.severity_of_injury),
+      'Management Notification': formatArrayOrText(item.management_notification),
+      'Person Notified': formatArrayOrText(item.person_notified),
+      'Other Remark': item.other_remark || '',
+      'Patient Related': formatArrayOrText(item.patient_related),
+      'ICU Related': formatArrayOrText(item.icu_related),
+      'Medication Error': formatArrayOrText(item.medication_error),
+      'Health Care Associated Infection': formatArrayOrText(item.health_care_associated_infection),
+      'Anesthesia Related': formatArrayOrText(item.anesthesia_related),
+      'Laboratory Related': formatArrayOrText(item.laboratory_related),
+      'Radiology Related': formatArrayOrText(item.radiology_related),
+      'Adverse Surgical Event': formatArrayOrText(item.adverse_surgical_event),
+      'Supply Chain Related': formatArrayOrText(item.supply_chain_related),
+      'Spillage / Exposure / Break Down': formatArrayOrText(item.spillage_exposure_break_down),
+      'Employee Related': formatArrayOrText(item.employee_related),
+      'Infusion Related': formatArrayOrText(item.infusion_related),
+      'Details of Incident': item.details_of_incident || '',
+      'Complication or Adverse Effect': item.complication_or_adverse_effect || '',
+      'Treatment': item.treatment || '',
+      'Root Cause Analysis (Factors Which Contributed to Event)': item.factors_which_contributed_to_the_event || '',
+      'How Could Event Have Been Prevented': item.how_could_the_event_have_been_prevented || '',
+      'Corrective Action': item.corrective_action || '',
+      'Preventive Action': item.preventive_action || '',
+      'Reporter Emp ID': item.reporter_emp_id || '',
+      'Reporter Name': item.reporter_name || '',
+      'Reporter Email': item.reporter_email || '',
+      'Reporter Department': item.reporter_dept || '',
+      'Investigation Submitted Date': formatDateTime(item.hod_submitted_at),
+      'Submitted By Lead Emp ID': item.hod_submitted_by_emp_id || '',
+      'Submitted By Lead Name': item.hod_submitted_by_name || '',
+      'Lead Closing Remarks': item.hod_remarks || '',
+      'Final Approver Emp ID': item.final_approver_emp_id || '',
+      'Final Approver Name': item.final_approver_name || '',
+      'Final Approval Date': formatDateTime(item.final_approval_date),
+      'Quality Approver Remarks': item.final_remarks || '',
+    }));
 
+    const headers = Object.keys(transformed[0]);
     const csv = [
-      columns.map(escapeCsv).join(','),
-      ...items.map((item) => columns.map((column) => escapeCsv(item[column])).join(',')),
+      headers.map(escapeCsvCell).join(','),
+      ...transformed.map((row) => headers.map((header) => escapeCsvCell(row[header])).join(',')),
     ].join('\r\n');
+
     const filename = `incidents_${new Date().toISOString().slice(0, 10)}.csv`;
 
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
@@ -344,7 +435,11 @@ export const getImage = async (req, res) => {
     const filePath = path.join(INCIDENT_UPLOADS_DIR, sanitizedFilename);
 
     if (!fs.existsSync(filePath)) {
-    return response.notFound(res, 'Attachment not found');
+      return response.notFound(res, 'Attachment not found');
+    }
+
+    if (req.query.download === '1' || req.query.download === 'true') {
+      return res.download(filePath, sanitizedFilename);
     }
 
     return res.sendFile(filePath);
