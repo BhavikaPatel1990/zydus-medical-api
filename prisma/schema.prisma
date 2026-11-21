@@ -69,6 +69,8 @@ model IncidentReport {
   complication_or_adverse_effect          String?        @db.Text
   treatment                               String?        @db.Text
   factors_which_contributed_to_the_event  String?        @db.Text // Root cause
+  rca_method                              String?        // '5_WHYS' | 'FISHBONE' | 'TEXT'
+  rca_data                                Json?          // Structured RCA data (whys or fishbone categories)
   how_could_the_event_have_been_prevented String?        @db.Text // Preventive measure
   corrective_action                       String?        @db.Text // Suggested by Lead Medical/Operations/Nursing
   preventive_action                       String?        @db.Text // Preventive Action

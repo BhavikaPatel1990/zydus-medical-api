@@ -39,7 +39,8 @@ const getGraphAccessToken = async () => {
   return token;
 };
 
-export const createPdfBuffer = (incident, siteName = 'ZYDUS HOSPITALS') => {
+export const createPdfBuffer = async (incident, siteName = 'ZYDUS HOSPITALS') => {
+  const { generateIncidentPdf } = await import(`./pdfGenerator.js?t=${Date.now()}`);
   return new Promise((resolve, reject) => {
     const pass = new PassThrough();
     const buffers = [];

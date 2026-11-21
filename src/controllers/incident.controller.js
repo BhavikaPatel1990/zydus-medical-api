@@ -319,7 +319,8 @@ export const downloadPdf = async (req, res) => {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="Incident_Report_${incident.incident_no}.pdf"`);
 
-    generateIncidentPdf(incident, res, siteName);
+    const { generateIncidentPdf: freshPdfGenerator } = await import(`../utils/pdfGenerator.js?t=${Date.now()}`);
+    freshPdfGenerator(incident, res, siteName);
   } catch (err) {
     return response.serverError(res, 'Failed generating PDF', err);
   }

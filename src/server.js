@@ -49,7 +49,7 @@ app.use(`${API_BASE_PATH}/api/uploads`, express.static(uploadsDir));
 app.use('/api/uploads', express.static(uploadsDir));
 app.use('/uploads', express.static(uploadsDir));
 
-// Base Route & Context
+// Base Route & Context (Reload trigger)
 app.use(`${API_BASE_PATH}/api`, apiRouter);
 app.use('/api', apiRouter); // Direct access alias
 
