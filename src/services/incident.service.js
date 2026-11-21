@@ -6,17 +6,20 @@ import { isUserSuperAdmin } from '../middleware/checkPermission.js';
 import { getAllowedIncidentCategories, INCIDENT_CATEGORY_FIELDS } from './incidentCategoryAccess.service.js';
 
 /**
- * Generate next sequential incident number (e.g. INC-2026-0001)
+ * Generate next sequential incident number by Year and Month (e.g. INC-2026-11-0001)
+ * Sequence resets to 0001 at the beginning of each month.
  */
 export const generateIncidentNumber = async () => {
-  const currentYear = new Date().getFullYear();
-  const prefix = `INC-${currentYear}-`;
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = String(now.getMonth() + 1).padStart(2, '0');
+  const prefix = `INC-${currentYear}-${currentMonth}-`;
 
   const lastIncident = await prisma.incidentReport.findFirst({
     where: {
       incident_no: { startsWith: prefix },
     },
-    orderBy: { created_at: 'desc' },
+    orderBy: { incident_no: 'desc' },
     select: { incident_no: true },
   });
 
@@ -25,15 +28,80 @@ export const generateIncidentNumber = async () => {
   }
 
   const parts = lastIncident.incident_no.split('-');
-  const seq = parseInt(parts[2], 10);
+  const seqStr = parts[parts.length - 1];
+  const seq = parseInt(seqStr, 10);
   const nextSeq = isNaN(seq) ? 1 : seq + 1;
   return `${prefix}${String(nextSeq).padStart(4, '0')}`;
+};
+
+/**
+ * Validate that for RCA 5 Whys framework, the first 3 Whys are provided.
+ */
+export const validateRca5Whys = (data) => {
+  const method = data.rca_method || data.rca_data?.method;
+  // If explicitly FISHBONE, skip 5 Whys validation
+  if (method === 'FISHBONE') return;
+
+  const is5Whys = method === '5_WHYS' || !method;
+  if (!is5Whys) return;
+
+  const rcaData = typeof data.rca_data === 'object' && data.rca_data !== null ? data.rca_data : {};
+  const whys = Array.isArray(rcaData.whys) ? rcaData.whys : [];
+
+  const getWhyVal = (index, key) => {
+    if (typeof rcaData[key] === 'string' && rcaData[key].trim()) {
+      return rcaData[key].trim();
+    }
+    if (whys[index]) {
+      const item = whys[index];
+      const val = typeof item === 'string' ? item : (item?.answer || item?.text || '');
+      if (typeof val === 'string' && val.trim()) return val.trim();
+    }
+    return '';
+  };
+
+  let why1 = getWhyVal(0, 'why1');
+  let why2 = getWhyVal(1, 'why2');
+  let why3 = getWhyVal(2, 'why3');
+
+  // Fallback to text parsing in factors_which_contributed_to_the_event if raw text was passed
+  if ((!why1 || !why2 || !why3) && typeof data.factors_which_contributed_to_the_event === 'string') {
+    const rawText = data.factors_which_contributed_to_the_event;
+    if (rawText.includes('[RCA Method: 5 Whys]')) {
+      const parsedWhys = [];
+      const lines = rawText.split('\n');
+      lines.forEach((l) => {
+        const match = l.match(/(?:Why did (?:this|that) happen\?\s*–\s*(\d+)|\b(\d+)\.\s*Why):\s*(.*)/i);
+        if (match) {
+          const idx = parseInt(match[1] || match[2], 10) - 1;
+          const val = (match[3] || '').replace(/\(Root Cause\)$/i, '').trim();
+          if (idx >= 0 && idx < 5) parsedWhys[idx] = val;
+        }
+      });
+      if (!why1 && parsedWhys[0]) why1 = parsedWhys[0];
+      if (!why2 && parsedWhys[1]) why2 = parsedWhys[1];
+      if (!why3 && parsedWhys[2]) why3 = parsedWhys[2];
+    }
+  }
+
+  const missing = [];
+  if (!why1) missing.push('Why did this happen? – 1');
+  if (!why2) missing.push('Why did that happen? – 2');
+  if (!why3) missing.push('Why did that happen? – 3');
+
+  if (missing.length > 0) {
+    const error = new Error(`In RCA Method: 5 Whys, the first 3 Whys are mandatory (${missing.join(', ')}).`);
+    error.status = 400;
+    error.statusCode = 400;
+    throw error;
+  }
 };
 
 /**
  * Create a new Incident with all CodeIgniter conforming fields
  */
 export const createIncident = async (data, user) => {
+  validateRca5Whys(data);
   const allowedCategoryFields = isUserSuperAdmin(user)
     ? INCIDENT_CATEGORY_FIELDS
     : await getAllowedIncidentCategories(user);
@@ -220,6 +288,7 @@ export const updateReporterIncident = async (id, data, user) => {
   const incident = await prisma.incidentReport.findUnique({ where: { id } });
   if (!incident) return null;
   assertReporterMayEditIncident(incident, user);
+  validateRca5Whys(data);
 
   const allowedCategoryFields = isUserSuperAdmin(user)
     ? INCIDENT_CATEGORY_FIELDS
@@ -384,6 +453,10 @@ export const submitHodReview = async (id, data, user) => {
     const err = new Error(`Incident report is locked and cannot be modified because it is already ${statusText}.`);
     err.statusCode = 400;
     throw err;
+  }
+
+  if (data.rca_method !== undefined || data.rca_data !== undefined) {
+    validateRca5Whys(data);
   }
 
   // Handle assigning an additional HOD if selected during review
@@ -621,6 +694,7 @@ export const listIncidents = async ({
       { location: { contains: search.trim(), mode: 'insensitive' } },
       { hod_submitted_by_name: { contains: search.trim(), mode: 'insensitive' } },
       { final_approver_name: { contains: search.trim(), mode: 'insensitive' } },
+      { medication_error: { has: search.trim() } },
     ];
 
     if (!where.AND) where.AND = [];
