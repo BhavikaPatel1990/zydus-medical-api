@@ -99,6 +99,24 @@ export const createIncident = async (data, user) => {
     return [val];
   };
 
+  const responsiblePersons = Array.isArray(data.responsible_persons)
+    ? data.responsible_persons
+    : (data.responsible_person ? String(data.responsible_person).split(',').map((s) => s.trim()).filter(Boolean) : []);
+
+  const responsiblePersonNames = responsiblePersons
+    .map((p) => (typeof p === 'object' && p !== null ? p.name : p))
+    .filter(Boolean);
+
+  const responsiblePersonIds = Array.isArray(data.responsible_person_ids) && data.responsible_person_ids.length > 0
+    ? data.responsible_person_ids.map(String).filter(Boolean)
+    : responsiblePersons
+        .map((p) => (typeof p === 'object' && p !== null && p.empId ? String(p.empId) : null))
+        .filter(Boolean);
+
+  const responsiblePersonString = responsiblePersonNames.length > 0
+    ? responsiblePersonNames.join(', ')
+    : (typeof data.responsible_person === 'string' ? data.responsible_person.trim() : '');
+
   const incident = await prisma.incidentReport.create({
     data: {
       incident_no,
@@ -117,7 +135,9 @@ export const createIncident = async (data, user) => {
       emp_id: data.emp_id || '',
       procedure_surgery_done: data.procedure_surgery_done || '',
       location: data.location || '',
-      responsible_person: data.responsible_person || '',
+      responsible_person: responsiblePersonString,
+      responsible_persons: responsiblePersonNames,
+      responsible_person_ids: responsiblePersonIds,
       assign_incident_report: String(hodEmpId || ''),
       assigned_hod_name: assignedHodName || data.assigned_hod_name || '',
       assigned_hod_email: assignedHodEmail || '',
@@ -242,6 +262,24 @@ export const updateReporterIncident = async (id, data, user) => {
     ...(primaryHod?.name || data.assigned_hod_name ? [primaryHod?.name || data.assigned_hod_name] : []),
   ])];
 
+  const responsiblePersons = Array.isArray(data.responsible_persons)
+    ? data.responsible_persons
+    : (data.responsible_person ? String(data.responsible_person).split(',').map((s) => s.trim()).filter(Boolean) : []);
+
+  const responsiblePersonNames = responsiblePersons
+    .map((p) => (typeof p === 'object' && p !== null ? p.name : p))
+    .filter(Boolean);
+
+  const responsiblePersonIds = Array.isArray(data.responsible_person_ids) && data.responsible_person_ids.length > 0
+    ? data.responsible_person_ids.map(String).filter(Boolean)
+    : responsiblePersons
+        .map((p) => (typeof p === 'object' && p !== null && p.empId ? String(p.empId) : null))
+        .filter(Boolean);
+
+  const responsiblePersonString = responsiblePersonNames.length > 0
+    ? responsiblePersonNames.join(', ')
+    : (typeof data.responsible_person === 'string' ? data.responsible_person.trim() : incident.responsible_person || '');
+
   return prisma.incidentReport.update({
     where: { id },
     data: {
@@ -256,7 +294,9 @@ export const updateReporterIncident = async (id, data, user) => {
       emp_id: data.emp_id || '',
       procedure_surgery_done: data.procedure_surgery_done || '',
       location: data.location || '',
-      responsible_person: data.responsible_person || '',
+      responsible_person: responsiblePersonString,
+      responsible_persons: responsiblePersonNames,
+      responsible_person_ids: responsiblePersonIds,
       assign_incident_report: hodEmpId,
       assigned_hod_name: primaryHod?.name || data.assigned_hod_name || primaryEmployee?.name || incident.assigned_hod_name || '',
       assigned_hod_email: primaryHod?.email || data.assigned_hod_email || primaryEmployee?.email || incident.assigned_hod_email || '',

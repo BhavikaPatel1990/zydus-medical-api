@@ -172,7 +172,7 @@ export const exportIncidents = async (req, res) => {
       'Emp ID': item.emp_id || '',
       'Procedure / Surgery Done': item.procedure_surgery_done || '',
       'Location / Ward': item.location || '',
-      'Responsible Person': item.responsible_person || '',
+      'Responsible Person': item.responsible_person || formatArrayOrText(item.responsible_persons) || '',
       'Assigned Lead Emp ID': item.assign_incident_report || '',
       'Assigned Lead Name': item.assigned_hod_name || '',
       'Assigned Lead Email': item.assigned_hod_email || '',

@@ -35,6 +35,8 @@ model IncidentReport {
   procedure_surgery_done                  String?        // Procedure/Surgery Done (If any)
   location                                String         // Location
   responsible_person                      String         // Responsible Person
+  responsible_persons                     String[]       @default([]) // Support multiple responsible persons
+  responsible_person_ids                  String[]       @default([]) // Support multiple responsible person IDs
   assign_incident_report                  String         // Primary Assigned HOD empId
   assigned_hod_name                       String?
   assigned_hod_email                      String?

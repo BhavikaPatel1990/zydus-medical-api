@@ -274,8 +274,11 @@ export const generateIncidentPdf = (incident, stream, siteName = 'ZYDUS HOSPITAL
     `${formatDate(incident.date_of_reporting)} ${incident.time_of_reporting || ''}`,
     false
   );
-  drawGridRow('Emp ID (If Applicable):', incident.emp_id, 'Procedure / Surgery Done:', incident.procedure_surgery_done, true);
-  drawGridRow('Location / Ward:', incident.location, 'Responsible Person:', incident.responsible_person, false);
+  drawRow('Emp ID (If Applicable):', incident.emp_id, 'Procedure / Surgery Done:', incident.procedure_surgery_done);
+  const responsibleDisplay = (incident.responsible_persons && incident.responsible_persons.length > 0)
+    ? incident.responsible_persons.join(', ')
+    : (incident.responsible_person || '');
+  drawRow('Location / Ward:', incident.location, 'Responsible Person:', responsibleDisplay);
 
   const hodListDisplay = (incident.assigned_hod_names && incident.assigned_hod_names.length > 0)
     ? incident.assigned_hod_names.join(', ')
