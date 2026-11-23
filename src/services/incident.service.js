@@ -35,12 +35,57 @@ export const generateIncidentNumber = async () => {
 };
 
 /**
- * Validate that for RCA 5 Whys framework, the first 3 Whys are provided.
+ * Validate that for RCA framework (5 Whys or Fishbone), mandatory criteria are met:
+ * - 5 Whys: first 3 Whys are required
+ * - Fishbone: at least 3 of the 6 categories (Staff, Procedures, Equipment, Environment, Communication, Patient) must have options selected
  */
 export const validateRca5Whys = (data) => {
   const method = data.rca_method || data.rca_data?.method;
-  // If explicitly FISHBONE, skip 5 Whys validation
-  if (method === 'FISHBONE') return;
+
+  if (method === 'FISHBONE') {
+    const rcaData = typeof data.rca_data === 'object' && data.rca_data !== null ? data.rca_data : {};
+    const categories = typeof rcaData.categories === 'object' && rcaData.categories !== null ? rcaData.categories : {};
+    const domainKeys = ['staff', 'procedures', 'equipment', 'environment', 'communication', 'patient'];
+    let filledCount = domainKeys.filter((k) => Array.isArray(categories[k]) && categories[k].length > 0).length;
+    let totalOptionsCount = domainKeys.reduce((sum, k) => sum + (Array.isArray(categories[k]) ? categories[k].length : 0), 0);
+
+    // Check common aliases
+    if (filledCount < 3) {
+      const merged = { ...categories };
+      if (Array.isArray(categories.people) && categories.people.length > 0 && (!merged.staff || merged.staff.length === 0)) {
+        merged.staff = categories.people;
+      }
+      if (Array.isArray(categories.process) && categories.process.length > 0 && (!merged.procedures || merged.procedures.length === 0)) {
+        merged.procedures = categories.process;
+      }
+      if (Array.isArray(categories.materials) && categories.materials.length > 0 && (!merged.equipment || merged.equipment.length === 0)) {
+        merged.equipment = categories.materials;
+      }
+      filledCount = domainKeys.filter((k) => Array.isArray(merged[k]) && merged[k].length > 0).length;
+      totalOptionsCount = domainKeys.reduce((sum, k) => sum + (Array.isArray(merged[k]) ? merged[k].length : 0), 0);
+    }
+
+    // Fallback: check text in factors_which_contributed_to_the_event if raw text was passed
+    if (filledCount < 3 && typeof data.factors_which_contributed_to_the_event === 'string') {
+      const rawText = data.factors_which_contributed_to_the_event;
+      if (rawText.includes('[RCA Method: Fishbone') || rawText.includes('Ishikawa')) {
+        const labels = ['Staff:', 'Procedures:', 'Equipment:', 'Environment:', 'Communication:', 'Patient:'];
+        const matchedLabels = labels.filter((lbl) => rawText.includes(lbl));
+        if (matchedLabels.length > filledCount) {
+          filledCount = matchedLabels.length;
+          totalOptionsCount = Math.max(totalOptionsCount, filledCount);
+        }
+      }
+    }
+
+    if (totalOptionsCount < 3 || filledCount < 3) {
+      const error = new Error('In RCA Method: Fishbone, minimum 3 options must be selected across at least 3 DIFFERENT categories (Staff, Procedures, Equipment, Environment, Communication, Patient). Selecting 3 options from a single category is not valid.');
+      error.status = 400;
+      error.statusCode = 400;
+      throw error;
+    }
+    return;
+  }
 
   const is5Whys = method === '5_WHYS' || !method;
   if (!is5Whys) return;
@@ -102,6 +147,12 @@ export const validateRca5Whys = (data) => {
  */
 export const createIncident = async (data, user) => {
   validateRca5Whys(data);
+  if (!data.name_of_treating_counsultant || !String(data.name_of_treating_counsultant).trim()) {
+    const error = new Error('Name of Treating Consultant is required');
+    error.status = 400;
+    error.statusCode = 400;
+    throw error;
+  }
   const allowedCategoryFields = isUserSuperAdmin(user)
     ? INCIDENT_CATEGORY_FIELDS
     : await getAllowedIncidentCategories(user);
@@ -289,6 +340,12 @@ export const updateReporterIncident = async (id, data, user) => {
   if (!incident) return null;
   assertReporterMayEditIncident(incident, user);
   validateRca5Whys(data);
+  if (data.name_of_treating_counsultant !== undefined && !String(data.name_of_treating_counsultant).trim()) {
+    const error = new Error('Name of Treating Consultant is required');
+    error.status = 400;
+    error.statusCode = 400;
+    throw error;
+  }
 
   const allowedCategoryFields = isUserSuperAdmin(user)
     ? INCIDENT_CATEGORY_FIELDS

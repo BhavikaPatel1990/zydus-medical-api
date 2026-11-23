@@ -204,16 +204,17 @@ export const exportIncidents = async (req, res) => {
       'Preventive Action': item.preventive_action || '',
       'Reporter Emp ID': item.reporter_emp_id || '',
       'Reporter Name': item.reporter_name || '',
+      'Reported Date & Time': combineDateTime(item.date_of_reporting, item.time_of_reporting) || formatDateTime(item.created_at || item.date_of_reporting),
       'Reporter Email': item.reporter_email || '',
       'Reporter Department': resolveDept(item.reporter_dept),
-      'Investigation Submitted Date': formatDateTime(item.hod_submitted_at),
       'Submitted By Lead Emp ID': item.hod_submitted_by_emp_id || '',
       'Submitted By Lead Name': item.hod_submitted_by_name || '',
       'Lead Closing Remarks': item.hod_remarks || '',
+      'Lead Closing Remark Date & Time': formatDateTime(item.hod_submitted_at),
       'Final Approver Emp ID': item.final_approver_emp_id || '',
       'Final Approver Name': item.final_approver_name || '',
-      'Final Approval Date': formatDateTime(item.final_approval_date),
       'Quality Approver Remarks': item.final_remarks || '',
+      'Final Approval Date & Time': formatDateTime(item.final_approval_date),
     }));
 
     const headers = Object.keys(transformed[0]);
