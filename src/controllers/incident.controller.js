@@ -186,6 +186,7 @@ export const exportIncidents = async (req, res) => {
       'Patient Related': formatArrayOrText(item.patient_related),
       'ICU Related': formatArrayOrText(item.icu_related),
       'Medication Error': formatArrayOrText(item.medication_error),
+      'Medication Error Category': item.medication_error_category || '',
       'Health Care Associated Infection': formatArrayOrText(item.health_care_associated_infection),
       'Anesthesia Related': formatArrayOrText(item.anesthesia_related),
       'Laboratory Related': formatArrayOrText(item.laboratory_related),

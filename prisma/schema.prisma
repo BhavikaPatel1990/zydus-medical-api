@@ -17,117 +17,118 @@ enum IncidentStatus {
 }
 
 model IncidentReport {
-  id                                      String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  incident_no                             String         @unique
-  site_id                                 Int            @default(1)
-  mst_site_id                             Int            @default(1)
+  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  incident_no String @unique
+  site_id     Int    @default(1)
+  mst_site_id Int    @default(1)
 
   // Tab 1: Basic Details
-  type_of_incident                        String[]       @default([]) // Clinical Incident, Non Clinical Incident
-  sub_type_of_incident                    String[]       @default([]) // Near Miss, Adverse Event, Sentinel Event
-  name                                    String         // Employee/Visitor/Patient Name
-  date_of_incident                        DateTime?
-  time_of_incident                        String?
-  cr_no                                   String         // CR No
-  date_of_reporting                       DateTime?
-  time_of_reporting                       String?
-  emp_id                                  String?        // Emp ID (If Applicable)
-  procedure_surgery_done                  String?        // Procedure/Surgery Done (If any)
-  location                                String         // Location
-  responsible_person                      String         // Responsible Person
-  responsible_persons                     String[]       @default([]) // Support multiple responsible persons
-  responsible_person_ids                  String[]       @default([]) // Support multiple responsible person IDs
-  assign_incident_report                  String         // Primary Assigned HOD empId
-  assigned_hod_name                       String?
-  assigned_hod_email                      String?
-  assigned_hod_dept                       String?
-  assigned_hod_ids                        String[]       @default([]) // Support multiple assigned HODs
-  assigned_hod_names                      String[]       @default([])
-  name_of_treating_counsultant            String?
-  images                                  String[]       @default([]) // Uploaded incident image filenames/paths
+  type_of_incident             String[]  @default([]) // Clinical Incident, Non Clinical Incident
+  sub_type_of_incident         String[]  @default([]) // Near Miss, Adverse Event, Sentinel Event
+  name                         String // Employee/Visitor/Patient Name
+  date_of_incident             DateTime?
+  time_of_incident             String?
+  cr_no                        String // CR No
+  date_of_reporting            DateTime?
+  time_of_reporting            String?
+  emp_id                       String? // Emp ID (If Applicable)
+  procedure_surgery_done       String? // Procedure/Surgery Done (If any)
+  location                     String // Location
+  responsible_person           String // Responsible Person
+  responsible_persons          String[]  @default([]) // Support multiple responsible persons
+  responsible_person_ids       String[]  @default([]) // Support multiple responsible person IDs
+  assign_incident_report       String // Primary Assigned HOD empId
+  assigned_hod_name            String?
+  assigned_hod_email           String?
+  assigned_hod_dept            String?
+  assigned_hod_ids             String[]  @default([]) // Support multiple assigned HODs
+  assigned_hod_names           String[]  @default([])
+  name_of_treating_counsultant String?
+  images                       String[]  @default([]) // Uploaded incident image filenames/paths
 
   // Tab 2: Details
-  severity_of_injury                      String[]       @default([]) // Non - Apparent, Slight or No treatment required, etc.
-  management_notification                 String[]       @default([]) // Center Head, Lead - Medical Service, Lead Operations, Lead Nursing, Lead Pharmacy
-  person_notified                         String[]       @default([]) // Quality Assurance, Consultant, Other
-  other_remark                            String?
+  severity_of_injury      String[] @default([]) // Non - Apparent, Slight or No treatment required, etc.
+  management_notification String[] @default([]) // Center Head, Lead - Medical Service, Lead Operations, Lead Nursing, Lead Pharmacy
+  person_notified         String[] @default([]) // Quality Assurance, Consultant, Other
+  other_remark            String?
 
   // Tab 3: Incidents (Categories)
-  patient_related                         String[]       @default([])
-  icu_related                             String[]       @default([])
-  medication_error                        String[]       @default([])
-  health_care_associated_infection        String[]       @default([])
-  anesthesia_related                      String[]       @default([])
-  laboratory_related                      String[]       @default([])
-  radiology_related                       String[]       @default([])
-  adverse_surgical_event                  String[]       @default([])
-  supply_chain_related                    String[]       @default([])
-  spillage_exposure_break_down            String[]       @default([])
-  employee_related                        String[]       @default([])
-  infusion_related                        String[]       @default([])
+  patient_related                  String[] @default([])
+  icu_related                      String[] @default([])
+  medication_error                 String[] @default([])
+  medication_error_category        String?
+  health_care_associated_infection String[] @default([])
+  anesthesia_related               String[] @default([])
+  laboratory_related               String[] @default([])
+  radiology_related                String[] @default([])
+  adverse_surgical_event           String[] @default([])
+  supply_chain_related             String[] @default([])
+  spillage_exposure_break_down     String[] @default([])
+  employee_related                 String[] @default([])
+  infusion_related                 String[] @default([])
 
   // Tab 4: Finish (Narrative & Investigation)
-  details_of_incident                     String?        @db.Text
-  complication_or_adverse_effect          String?        @db.Text
-  treatment                               String?        @db.Text
-  factors_which_contributed_to_the_event  String?        @db.Text // Root cause
-  rca_method                              String?        // '5_WHYS' | 'FISHBONE' | 'TEXT'
-  rca_data                                Json?          // Structured RCA data (whys or fishbone categories)
-  how_could_the_event_have_been_prevented String?        @db.Text // Preventive measure
-  corrective_action                       String?        @db.Text // Suggested by Lead Medical/Operations/Nursing
-  preventive_action                       String?        @db.Text // Preventive Action
+  details_of_incident                     String? @db.Text
+  complication_or_adverse_effect          String? @db.Text
+  treatment                               String? @db.Text
+  factors_which_contributed_to_the_event  String? @db.Text // Root cause
+  rca_method                              String? // '5_WHYS' | 'FISHBONE' | 'TEXT'
+  rca_data                                Json? // Structured RCA data (whys or fishbone categories)
+  how_could_the_event_have_been_prevented String? @db.Text // Preventive measure
+  corrective_action                       String? @db.Text // Suggested by Lead Medical/Operations/Nursing
+  preventive_action                       String? @db.Text // Preventive Action
 
   // Reporter Audit
-  reporter_emp_id                         String
-  reporter_name                           String
-  reporter_email                          String?
-  reporter_dept                           String?
+  reporter_emp_id String
+  reporter_name   String
+  reporter_email  String?
+  reporter_dept   String?
 
   // Workflow Status & Signoffs
-  status                                  IncidentStatus @default(ASSIGNED_TO_HOD)
-  hod_submitted_at                        DateTime?
-  hod_submitted_by_emp_id                 String?
-  hod_submitted_by_name                   String?
-  hod_remarks                             String?        @db.Text
+  status                  IncidentStatus @default(ASSIGNED_TO_HOD)
+  hod_submitted_at        DateTime?
+  hod_submitted_by_emp_id String?
+  hod_submitted_by_name   String?
+  hod_remarks             String?        @db.Text
 
-  final_approver_emp_id                   String?
-  final_approver_name                     String?
-  final_approval_date                     DateTime?
-  final_remarks                           String?        @db.Text
+  final_approver_emp_id String?
+  final_approver_name   String?
+  final_approval_date   DateTime?
+  final_remarks         String?   @db.Text
 
-  created_at                              DateTime       @default(now())
-  updated_at                              DateTime       @updatedAt
-  created_by                              String?
-  updated_by                              String?
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+  created_by String?
+  updated_by String?
 
-  email_logs                              IncidentEmailLog[]
+  email_logs IncidentEmailLog[]
 
-  @@map("incident_reports")
   @@index([incident_no])
   @@index([status])
   @@index([reporter_emp_id])
   @@index([assign_incident_report])
   @@index([date_of_incident])
+  @@map("incident_reports")
 }
 
 model IncidentEmailLog {
-  id                 String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  incident_id        String         @db.Uuid
-  sent_by_emp_id     String
-  sent_by_name       String
-  recipients         String[]       @default([])
-  cc_recipients      String[]       @default([])
-  subject            String
-  status             String         @default("SENT")
-  message_id         String?
-  error_message      String?
-  sent_at            DateTime       @default(now())
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  incident_id    String   @db.Uuid
+  sent_by_emp_id String
+  sent_by_name   String
+  recipients     String[] @default([])
+  cc_recipients  String[] @default([])
+  subject        String
+  status         String   @default("SENT")
+  message_id     String?
+  error_message  String?
+  sent_at        DateTime @default(now())
 
-  incident           IncidentReport @relation(fields: [incident_id], references: [id], onDelete: Cascade)
+  incident IncidentReport @relation(fields: [incident_id], references: [id], onDelete: Cascade)
 
-  @@map("incident_email_logs")
   @@index([incident_id])
   @@index([sent_at])
+  @@map("incident_email_logs")
 }
 
 model IncidentCategoryAccess {

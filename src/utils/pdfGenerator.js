@@ -295,7 +295,12 @@ export const generateIncidentPdf = (incident, stream, siteName = 'ZYDUS HOSPITAL
   const cats = [
     { label: 'Patient Related:', val: incident.patient_related },
     { label: 'ICU Related:', val: incident.icu_related },
-    { label: 'Medication Error:', val: incident.medication_error },
+    {
+      label: 'Medication Error:',
+      val: incident.medication_error_category && Array.isArray(incident.medication_error) && incident.medication_error.length > 0
+        ? [...incident.medication_error, `(${incident.medication_error_category})`]
+        : incident.medication_error,
+    },
     { label: 'Healthcare Infection:', val: incident.health_care_associated_infection },
     { label: 'Anesthesia Related:', val: incident.anesthesia_related },
     { label: 'Laboratory Related:', val: incident.laboratory_related },
