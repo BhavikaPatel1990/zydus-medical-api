@@ -6,17 +6,20 @@ import { isUserSuperAdmin } from '../middleware/checkPermission.js';
 import { getAllowedIncidentCategories, INCIDENT_CATEGORY_FIELDS } from './incidentCategoryAccess.service.js';
 
 /**
- * Generate next sequential incident number (e.g. INC-2026-0001)
+ * Generate next sequential incident number by Year and Month (e.g. INC-2026-11-0001)
+ * Sequence resets to 0001 at the beginning of each month.
  */
 export const generateIncidentNumber = async () => {
-  const currentYear = new Date().getFullYear();
-  const prefix = `INC-${currentYear}-`;
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = String(now.getMonth() + 1).padStart(2, '0');
+  const prefix = `INC-${currentYear}-${currentMonth}-`;
 
   const lastIncident = await prisma.incidentReport.findFirst({
     where: {
       incident_no: { startsWith: prefix },
     },
-    orderBy: { created_at: 'desc' },
+    orderBy: { incident_no: 'desc' },
     select: { incident_no: true },
   });
 
@@ -25,15 +28,131 @@ export const generateIncidentNumber = async () => {
   }
 
   const parts = lastIncident.incident_no.split('-');
-  const seq = parseInt(parts[2], 10);
+  const seqStr = parts[parts.length - 1];
+  const seq = parseInt(seqStr, 10);
   const nextSeq = isNaN(seq) ? 1 : seq + 1;
   return `${prefix}${String(nextSeq).padStart(4, '0')}`;
+};
+
+/**
+ * Validate that for RCA framework (5 Whys or Fishbone), mandatory criteria are met:
+ * - 5 Whys: first 3 Whys are required
+ * - Fishbone: at least 3 of the 6 categories (Staff, Procedures, Equipment, Environment, Communication, Patient) must have options selected
+ */
+export const validateRca5Whys = (data) => {
+  const method = data.rca_method || data.rca_data?.method;
+
+  if (method === 'FISHBONE') {
+    const rcaData = typeof data.rca_data === 'object' && data.rca_data !== null ? data.rca_data : {};
+    const categories = typeof rcaData.categories === 'object' && rcaData.categories !== null ? rcaData.categories : {};
+    const domainKeys = ['staff', 'procedures', 'equipment', 'environment', 'communication', 'patient'];
+    let filledCount = domainKeys.filter((k) => Array.isArray(categories[k]) && categories[k].length > 0).length;
+    let totalOptionsCount = domainKeys.reduce((sum, k) => sum + (Array.isArray(categories[k]) ? categories[k].length : 0), 0);
+
+    // Check common aliases
+    if (filledCount < 3) {
+      const merged = { ...categories };
+      if (Array.isArray(categories.people) && categories.people.length > 0 && (!merged.staff || merged.staff.length === 0)) {
+        merged.staff = categories.people;
+      }
+      if (Array.isArray(categories.process) && categories.process.length > 0 && (!merged.procedures || merged.procedures.length === 0)) {
+        merged.procedures = categories.process;
+      }
+      if (Array.isArray(categories.materials) && categories.materials.length > 0 && (!merged.equipment || merged.equipment.length === 0)) {
+        merged.equipment = categories.materials;
+      }
+      filledCount = domainKeys.filter((k) => Array.isArray(merged[k]) && merged[k].length > 0).length;
+      totalOptionsCount = domainKeys.reduce((sum, k) => sum + (Array.isArray(merged[k]) ? merged[k].length : 0), 0);
+    }
+
+    // Fallback: check text in factors_which_contributed_to_the_event if raw text was passed
+    if (filledCount < 3 && typeof data.factors_which_contributed_to_the_event === 'string') {
+      const rawText = data.factors_which_contributed_to_the_event;
+      if (rawText.includes('[RCA Method: Fishbone') || rawText.includes('Ishikawa')) {
+        const labels = ['Staff:', 'Procedures:', 'Equipment:', 'Environment:', 'Communication:', 'Patient:'];
+        const matchedLabels = labels.filter((lbl) => rawText.includes(lbl));
+        if (matchedLabels.length > filledCount) {
+          filledCount = matchedLabels.length;
+          totalOptionsCount = Math.max(totalOptionsCount, filledCount);
+        }
+      }
+    }
+
+    if (totalOptionsCount < 3 || filledCount < 3) {
+      const error = new Error('In RCA Method: Fishbone, minimum 3 options must be selected across at least 3 DIFFERENT categories (Staff, Procedures, Equipment, Environment, Communication, Patient). Selecting 3 options from a single category is not valid.');
+      error.status = 400;
+      error.statusCode = 400;
+      throw error;
+    }
+    return;
+  }
+
+  const is5Whys = method === '5_WHYS' || !method;
+  if (!is5Whys) return;
+
+  const rcaData = typeof data.rca_data === 'object' && data.rca_data !== null ? data.rca_data : {};
+  const whys = Array.isArray(rcaData.whys) ? rcaData.whys : [];
+
+  const getWhyVal = (index, key) => {
+    if (typeof rcaData[key] === 'string' && rcaData[key].trim()) {
+      return rcaData[key].trim();
+    }
+    if (whys[index]) {
+      const item = whys[index];
+      const val = typeof item === 'string' ? item : (item?.answer || item?.text || '');
+      if (typeof val === 'string' && val.trim()) return val.trim();
+    }
+    return '';
+  };
+
+  let why1 = getWhyVal(0, 'why1');
+  let why2 = getWhyVal(1, 'why2');
+  let why3 = getWhyVal(2, 'why3');
+
+  // Fallback to text parsing in factors_which_contributed_to_the_event if raw text was passed
+  if ((!why1 || !why2 || !why3) && typeof data.factors_which_contributed_to_the_event === 'string') {
+    const rawText = data.factors_which_contributed_to_the_event;
+    if (rawText.includes('[RCA Method: 5 Whys]')) {
+      const parsedWhys = [];
+      const lines = rawText.split('\n');
+      lines.forEach((l) => {
+        const match = l.match(/(?:Why did (?:this|that) happen\?\s*–\s*(\d+)|\b(\d+)\.\s*Why):\s*(.*)/i);
+        if (match) {
+          const idx = parseInt(match[1] || match[2], 10) - 1;
+          const val = (match[3] || '').replace(/\(Root Cause\)$/i, '').trim();
+          if (idx >= 0 && idx < 5) parsedWhys[idx] = val;
+        }
+      });
+      if (!why1 && parsedWhys[0]) why1 = parsedWhys[0];
+      if (!why2 && parsedWhys[1]) why2 = parsedWhys[1];
+      if (!why3 && parsedWhys[2]) why3 = parsedWhys[2];
+    }
+  }
+
+  const missing = [];
+  if (!why1) missing.push('Why did this happen? – 1');
+  if (!why2) missing.push('Why did that happen? – 2');
+  if (!why3) missing.push('Why did that happen? – 3');
+
+  if (missing.length > 0) {
+    const error = new Error(`In RCA Method: 5 Whys, the first 3 Whys are mandatory (${missing.join(', ')}).`);
+    error.status = 400;
+    error.statusCode = 400;
+    throw error;
+  }
 };
 
 /**
  * Create a new Incident with all CodeIgniter conforming fields
  */
 export const createIncident = async (data, user) => {
+  validateRca5Whys(data);
+  if (!data.name_of_treating_counsultant || !String(data.name_of_treating_counsultant).trim()) {
+    const error = new Error('Name of Treating Consultant is required');
+    error.status = 400;
+    error.statusCode = 400;
+    throw error;
+  }
   const allowedCategoryFields = isUserSuperAdmin(user)
     ? INCIDENT_CATEGORY_FIELDS
     : await getAllowedIncidentCategories(user);
@@ -99,6 +218,24 @@ export const createIncident = async (data, user) => {
     return [val];
   };
 
+  const responsiblePersons = Array.isArray(data.responsible_persons)
+    ? data.responsible_persons
+    : (data.responsible_person ? String(data.responsible_person).split(',').map((s) => s.trim()).filter(Boolean) : []);
+
+  const responsiblePersonNames = responsiblePersons
+    .map((p) => (typeof p === 'object' && p !== null ? p.name : p))
+    .filter(Boolean);
+
+  const responsiblePersonIds = Array.isArray(data.responsible_person_ids) && data.responsible_person_ids.length > 0
+    ? data.responsible_person_ids.map(String).filter(Boolean)
+    : responsiblePersons
+        .map((p) => (typeof p === 'object' && p !== null && p.empId ? String(p.empId) : null))
+        .filter(Boolean);
+
+  const responsiblePersonString = responsiblePersonNames.length > 0
+    ? responsiblePersonNames.join(', ')
+    : (typeof data.responsible_person === 'string' ? data.responsible_person.trim() : '');
+
   const incident = await prisma.incidentReport.create({
     data: {
       incident_no,
@@ -117,7 +254,9 @@ export const createIncident = async (data, user) => {
       emp_id: data.emp_id || '',
       procedure_surgery_done: data.procedure_surgery_done || '',
       location: data.location || '',
-      responsible_person: data.responsible_person || '',
+      responsible_person: responsiblePersonString,
+      responsible_persons: responsiblePersonNames,
+      responsible_person_ids: responsiblePersonIds,
       assign_incident_report: String(hodEmpId || ''),
       assigned_hod_name: assignedHodName || data.assigned_hod_name || '',
       assigned_hod_email: assignedHodEmail || '',
@@ -137,6 +276,7 @@ export const createIncident = async (data, user) => {
       patient_related: ensureArray(data.patient_related),
       icu_related: ensureArray(data.icu_related),
       medication_error: ensureArray(data.medication_error),
+      medication_error_category: data.medication_error_category || null,
       health_care_associated_infection: ensureArray(data.health_care_associated_infection),
       anesthesia_related: ensureArray(data.anesthesia_related),
       laboratory_related: ensureArray(data.laboratory_related),
@@ -200,6 +340,13 @@ export const updateReporterIncident = async (id, data, user) => {
   const incident = await prisma.incidentReport.findUnique({ where: { id } });
   if (!incident) return null;
   assertReporterMayEditIncident(incident, user);
+  validateRca5Whys(data);
+  if (data.name_of_treating_counsultant !== undefined && !String(data.name_of_treating_counsultant).trim()) {
+    const error = new Error('Name of Treating Consultant is required');
+    error.status = 400;
+    error.statusCode = 400;
+    throw error;
+  }
 
   const allowedCategoryFields = isUserSuperAdmin(user)
     ? INCIDENT_CATEGORY_FIELDS
@@ -242,6 +389,24 @@ export const updateReporterIncident = async (id, data, user) => {
     ...(primaryHod?.name || data.assigned_hod_name ? [primaryHod?.name || data.assigned_hod_name] : []),
   ])];
 
+  const responsiblePersons = Array.isArray(data.responsible_persons)
+    ? data.responsible_persons
+    : (data.responsible_person ? String(data.responsible_person).split(',').map((s) => s.trim()).filter(Boolean) : []);
+
+  const responsiblePersonNames = responsiblePersons
+    .map((p) => (typeof p === 'object' && p !== null ? p.name : p))
+    .filter(Boolean);
+
+  const responsiblePersonIds = Array.isArray(data.responsible_person_ids) && data.responsible_person_ids.length > 0
+    ? data.responsible_person_ids.map(String).filter(Boolean)
+    : responsiblePersons
+        .map((p) => (typeof p === 'object' && p !== null && p.empId ? String(p.empId) : null))
+        .filter(Boolean);
+
+  const responsiblePersonString = responsiblePersonNames.length > 0
+    ? responsiblePersonNames.join(', ')
+    : (typeof data.responsible_person === 'string' ? data.responsible_person.trim() : incident.responsible_person || '');
+
   return prisma.incidentReport.update({
     where: { id },
     data: {
@@ -256,7 +421,9 @@ export const updateReporterIncident = async (id, data, user) => {
       emp_id: data.emp_id || '',
       procedure_surgery_done: data.procedure_surgery_done || '',
       location: data.location || '',
-      responsible_person: data.responsible_person || '',
+      responsible_person: responsiblePersonString,
+      responsible_persons: responsiblePersonNames,
+      responsible_person_ids: responsiblePersonIds,
       assign_incident_report: hodEmpId,
       assigned_hod_name: primaryHod?.name || data.assigned_hod_name || primaryEmployee?.name || incident.assigned_hod_name || '',
       assigned_hod_email: primaryHod?.email || data.assigned_hod_email || primaryEmployee?.email || incident.assigned_hod_email || '',
@@ -272,6 +439,7 @@ export const updateReporterIncident = async (id, data, user) => {
       person_notified: ensureArray(data.person_notified),
       other_remark: data.other_remark || '',
       ...categoryValues,
+      medication_error_category: data.medication_error_category !== undefined ? (data.medication_error_category || null) : incident.medication_error_category,
       details_of_incident: data.details_of_incident || '',
       complication_or_adverse_effect: data.complication_or_adverse_effect || '',
       treatment: data.treatment || '',
@@ -344,6 +512,10 @@ export const submitHodReview = async (id, data, user) => {
     const err = new Error(`Incident report is locked and cannot be modified because it is already ${statusText}.`);
     err.statusCode = 400;
     throw err;
+  }
+
+  if (data.rca_method !== undefined || data.rca_data !== undefined) {
+    validateRca5Whys(data);
   }
 
   // Handle assigning an additional HOD if selected during review
@@ -581,6 +753,7 @@ export const listIncidents = async ({
       { location: { contains: search.trim(), mode: 'insensitive' } },
       { hod_submitted_by_name: { contains: search.trim(), mode: 'insensitive' } },
       { final_approver_name: { contains: search.trim(), mode: 'insensitive' } },
+      { medication_error: { has: search.trim() } },
     ];
 
     if (!where.AND) where.AND = [];

@@ -274,8 +274,11 @@ export const generateIncidentPdf = (incident, stream, siteName = 'ZYDUS HOSPITAL
     `${formatDate(incident.date_of_reporting)} ${incident.time_of_reporting || ''}`,
     false
   );
-  drawGridRow('Emp ID (If Applicable):', incident.emp_id, 'Procedure / Surgery Done:', incident.procedure_surgery_done, true);
-  drawGridRow('Location / Ward:', incident.location, 'Responsible Person:', incident.responsible_person, false);
+  drawRow('Emp ID (If Applicable):', incident.emp_id, 'Procedure / Surgery Done:', incident.procedure_surgery_done);
+  const responsibleDisplay = (incident.responsible_persons && incident.responsible_persons.length > 0)
+    ? incident.responsible_persons.join(', ')
+    : (incident.responsible_person || '');
+  drawRow('Location / Ward:', incident.location, 'Responsible Person:', responsibleDisplay);
 
   const hodListDisplay = (incident.assigned_hod_names && incident.assigned_hod_names.length > 0)
     ? incident.assigned_hod_names.join(', ')
@@ -292,7 +295,12 @@ export const generateIncidentPdf = (incident, stream, siteName = 'ZYDUS HOSPITAL
   const cats = [
     { label: 'Patient Related:', val: incident.patient_related },
     { label: 'ICU Related:', val: incident.icu_related },
-    { label: 'Medication Error:', val: incident.medication_error },
+    {
+      label: 'Medication Error:',
+      val: incident.medication_error_category && Array.isArray(incident.medication_error) && incident.medication_error.length > 0
+        ? [...incident.medication_error, `(${incident.medication_error_category})`]
+        : incident.medication_error,
+    },
     { label: 'Healthcare Infection:', val: incident.health_care_associated_infection },
     { label: 'Anesthesia Related:', val: incident.anesthesia_related },
     { label: 'Laboratory Related:', val: incident.laboratory_related },
